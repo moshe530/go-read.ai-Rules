@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ניהול כללים - מה מסמנים?</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f4f2ed; margin: 0; padding: 0; direction: rtl; color: #2c2c2a;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+  header { text-align: center; padding: 10px 0 20px; }
+  header h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; color: #1d3f2f; }
+  .card {
+    background: #fff; border-radius: 14px; border: 1px solid #e3e0d6;
+    padding: 18px; margin-top: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  input[type=password], input[type=text] {
+    width: 100%; font-size: 15px; padding: 10px; border-radius: 8px;
+    border: 1px solid #d6d2c4; direction: rtl;
+  }
+  button {
+    font-size: 14px; font-weight: 600; padding: 9px 16px;
+    border-radius: 8px; border: none; cursor: pointer;
+  }
+  .btn-primary { background: #0f6e56; color: #fff; }
+  .btn-secondary { background: #f1efe8; color: #444441; }
+  .btn-danger { background: #fbe9e9; color: #a32d2d; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+  th, td { border: 1px solid #e3e0d6; padding: 6px; text-align: right; vertical-align: top; }
+  th { background: #f1efe8; }
+  td textarea {
+    width: 100%; min-width: 110px; min-height: 40px; border: none;
+    font-family: inherit; font-size: 13px; resize: vertical; direction: rtl; background: transparent;
+  }
+  td textarea:focus { outline: 1px solid #0f6e56; }
+  .row-actions { white-space: nowrap; }
+  .topbar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+  .msg { font-size: 13px; margin-top: 10px; }
+  .msg.ok { color: #1d5c1d; }
+  .msg.err { color: #a32d2d; }
+  #loginCard, #editorCard { display: none; }
+  #loginCard.show, #editorCard.show { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ניהול טבלת הכללים</h1>
+  </header>
+
+  <div class="card" id="loginCard">
+    <p>הזינו את סיסמת העריכה המשותפת כדי להמשיך.</p>
+    <input type="password" id="passwordInput" placeholder="סיסמה">
+    <div class="topbar">
+      <button class="btn-primary" onclick="login()">כניסה</button>
+    </div>
+    <div class="msg err" id="loginMsg"></div>
+  </div>
+
+  <div class="card" id="editorCard">
+    <div class="topbar">
+      <button class="btn-secondary" onclick="addRow()">+ הוספת שורה</button>
+      <button class="btn-primary" onclick="saveRules()">שמירת כל השינויים</button>
+      <button class="btn-secondary" onclick="loadRules()">רענון (ביטול שינויים שלא נשמרו)</button>
+      <button class="btn-secondary" onclick="logout()">יציאה</button>
+    </div>
+    <div class="msg" id="saveMsg"></div>
+    <table id="rulesTable">
+      <thead>
+        <tr>
+          <th style="width:12%">קטגוריה</th>
+          <th style="width:16%">כלל / כפתור</th>
+          <th style="width:26%">פירוט</th>
+          <th style="width:18%">דוגמה</th>
+          <th style="width:18%">הערות</th>
+          <th style="width:8%">עדכון</th>
+          <th style="width:2%"></th>
+        </tr>
+      </thead>
+      <tbody id="rulesBody"></tbody>
+    </table>
+    <div class="topbar">
+      <button class="btn-secondary" onclick="addRow()">+ הוספת שורה</button>
+      <button class="btn-primary" onclick="saveRules()">שמירת כל השינויים</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLS = ["קטגוריה", "כלל / כפתור", "פירוט", "דוגמה", "הערות", "תאריך עדכון"];
+let rules = [];
+
+function getPassword() {
+  return sessionStorage.getItem('adminPassword') || '';
+}
+
+function login() {
+  const pw = document.getElementById('passwordInput').value;
+  if (!pw) return;
+  sessionStorage.setItem('adminPassword', pw);
+  loadRules();
+}
+
+function logout() {
+  sessionStorage.removeItem('adminPassword');
+  document.getElementById('editorCard').classList.remove('show');
+  document.getElementById('loginCard').classList.add('show');
+}
+
+function showLoginError(msg) {
+  document.getElementById('loginMsg').textContent = msg;
+  sessionStorage.removeItem('adminPassword');
+}
+
+async function loadRules() {
+  try {
+    const res = await fetch('/.netlify/functions/rules');
+    const data = await res.json();
+    rules = Array.isArray(data) ? data : [];
+  } catch (err) {
+    rules = [];
+  }
+  // אם אין עדיין סיסמה שמורה - מציגים רק את מסך ההתחברות
+  if (!getPassword()) {
+    document.getElementById('loginCard').classList.add('show');
+    document.getElementById('editorCard').classList.remove('show');
+    renderTable();
+    return;
+  }
+  document.getElementById('loginCard').classList.remove('show');
+  document.getElementById('editorCard').classList.add('show');
+  renderTable();
+}
+
+function renderTable() {
+  const body = document.getElementById('rulesBody');
+  body.innerHTML = '';
+  rules.forEach((row, idx) => {
+    const tr = document.createElement('tr');
+    COLS.forEach(col => {
+      const td = document.createElement('td');
+      const ta = document.createElement('textarea');
+      ta.value = row[col] || '';
+      ta.addEventListener('input', () => { rules[idx][col] = ta.value; });
+      td.appendChild(ta);
+      tr.appendChild(td);
+    });
+    const actionTd = document.createElement('td');
+    actionTd.className = 'row-actions';
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-danger';
+    delBtn.textContent = 'מחק';
+    delBtn.onclick = () => { rules.splice(idx, 1); renderTable(); };
+    actionTd.appendChild(delBtn);
+    tr.appendChild(actionTd);
+    body.appendChild(tr);
+  });
+}
+
+function addRow() {
+  const empty = {};
+  COLS.forEach(c => empty[c] = '');
+  rules.push(empty);
+  renderTable();
+}
+
+async function saveRules() {
+  const msgEl = document.getElementById('saveMsg');
+  msgEl.textContent = 'שומר...';
+  msgEl.className = 'msg';
+  try {
+    const res = await fetch('/.netlify/functions/rules', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': getPassword()
+      },
+      body: JSON.stringify(rules)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) {
+        showLoginError('סיסמה שגויה');
+        document.getElementById('editorCard').classList.remove('show');
+        document.getElementById('loginCard').classList.add('show');
+        return;
+      }
+      throw new Error(data.error || ('שגיאה: ' + res.status));
+    }
+    msgEl.textContent = `נשמר בהצלחה - ${data.count} שורות`;
+    msgEl.className = 'msg ok';
+  } catch (err) {
+    msgEl.textContent = 'שגיאה בשמירה: ' + err.message;
+    msgEl.className = 'msg err';
+  }
+}
+
+document.getElementById('passwordInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') login();
+});
+
+loadRules();
+</script>
+</body>
+</html>
