@@ -101,7 +101,7 @@
 
         tr:nth-child(even) { background-color: #f9f9f9; }
 
-        input[type="text"] {
+        input[type="text"], input[type="password"] {
             width: 100%;
             padding: 6px;
             border: 1px solid #ccc;
@@ -118,12 +118,40 @@
 
         .status-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .status-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+        /* מסך כניסה */
+        #loginScreen {
+            max-width: 360px;
+            margin: 80px auto;
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        #loginScreen h2 { color: var(--primary); margin-top: 0; }
+        #loginScreen input { margin-bottom: 12px; }
+        #mainApp { display: none; }
+        .logout-link {
+            font-size: 13px; color: #888; cursor: pointer; text-decoration: underline;
+            display: inline-block; margin-inline-start: 10px;
+        }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>מערכת ניהול - כללי סימון שגיאות</h1>
+<div id="loginScreen">
+    <h2>כניסת עורכים</h2>
+    <p>הזינו את הסיסמה המשותפת לניהול הכללים.</p>
+    <input type="password" id="passwordInput" placeholder="סיסמה">
+    <button class="btn-primary" style="width:100%" onclick="login()">כניסה</button>
+    <div id="loginError" class="status-msg status-error"></div>
+</div>
+
+<div class="container" id="mainApp">
+    <h1>מערכת ניהול - כללי סימון שגיאות
+      <span class="logout-link" onclick="logout()">יציאה</span>
+    </h1>
 
     <div id="statusMsg" class="status-msg"></div>
 
@@ -160,8 +188,39 @@
 <script>
     let rulesData = [];
 
-    // טעינת הכללים בעת עליית הדף
-    window.addEventListener('DOMContentLoaded', loadRules);
+    function getPassword() {
+        return sessionStorage.getItem('adminPassword') || '';
+    }
+
+    function login() {
+        const pw = document.getElementById('passwordInput').value;
+        if (!pw) return;
+        sessionStorage.setItem('adminPassword', pw);
+        document.getElementById('loginError').style.display = 'none';
+        showApp();
+    }
+
+    function logout() {
+        sessionStorage.removeItem('adminPassword');
+        document.getElementById('mainApp').style.display = 'none';
+        document.getElementById('loginScreen').style.display = 'block';
+        document.getElementById('passwordInput').value = '';
+    }
+
+    function showApp() {
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('mainApp').style.display = 'block';
+        loadRules();
+    }
+
+    document.getElementById('passwordInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') login();
+    });
+
+    // אם כבר יש סיסמה שמורה בזיכרון הדפדפן (מהפעם הקודמת בסשן זה) - נכנסים ישר
+    if (getPassword()) {
+        showApp();
+    }
 
     async function loadRules() {
         showStatus('טוען נתונים...', 'success');
@@ -172,7 +231,7 @@
                 renderTable();
                 showStatus('הנתונים נטענו בהצלחה', 'success');
             } else {
-                showStatus('שגיאה שטעינת הנתונים מהשרת', 'error');
+                showStatus('שגיאה בטעינת הנתונים מהשרת', 'error');
             }
         } catch (err) {
             console.error(err);
@@ -257,14 +316,21 @@
         try {
             const response = await fetch('/.netlify/functions/rules', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-password': getPassword()
+                },
                 body: JSON.stringify(rulesData)
             });
 
             if (response.ok) {
                 showStatus('כל השינויים שנערכו נשמרו בהצלחה!', 'success');
+            } else if (response.status === 401) {
+                showStatus('סיסמה שגויה - נכנסים מחדש', 'error');
+                logout();
             } else {
-                showStatus('שגיאה בעת שמירת הנתונים בשרת', 'error');
+                const data = await response.json().catch(() => ({}));
+                showStatus(data.error || 'שגיאה בעת שמירת הנתונים בשרת', 'error');
             }
         } catch (err) {
             console.error(err);
