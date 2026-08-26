@@ -1,7 +1,3 @@
-// netlify/functions/rules.js
-// GET  -> מחזיר את רשימת הכללים (JSON) - פתוח לכולם (הכלי הראשי קורא מכאן)
-// POST -> שומר רשימת כללים חדשה - דורש כותרת x-admin-password תואמת ל-ADMIN_PASSWORD
-
 import { getStore } from "@netlify/blobs";
 
 const KEY = "rules";
@@ -21,19 +17,26 @@ export default async (req) => {
   }
 
   if (req.method === "GET") {
-    const data = await store.get(KEY, { type: "json" });
-    return new Response(JSON.stringify(data || []), { status: 200, headers });
+    try {
+      const data = await store.get(KEY, { type: "json" });
+      return new Response(JSON.stringify(data || []), { status: 200, headers });
+    } catch (err) {
+      return new Response(JSON.stringify([]), { status: 200, headers });
+    }
   }
 
   if (req.method === "POST") {
     const providedPassword = req.headers.get("x-admin-password") || "";
     const realPassword = process.env.ADMIN_PASSWORD || "";
-    if (!realPassword || providedPassword !== realPassword) {
+    
+    // בודק סיסמה רק אם הוגדרה סיסמה בהגדרות השרת
+    if (realPassword && providedPassword !== realPassword) {
       return new Response(JSON.stringify({ error: "סיסמה שגויה" }), {
         status: 401,
         headers,
       });
     }
+
     let body;
     try {
       body = await req.json();
@@ -43,17 +46,26 @@ export default async (req) => {
         headers,
       });
     }
+
     if (!Array.isArray(body)) {
       return new Response(JSON.stringify({ error: "יש לשלוח מערך של כללים" }), {
         status: 400,
         headers,
       });
     }
-    await store.setJSON(KEY, body);
-    return new Response(JSON.stringify({ ok: true, count: body.length }), {
-      status: 200,
-      headers,
-    });
+
+    try {
+      await store.setJSON(KEY, body);
+      return new Response(JSON.stringify({ ok: true, count: body.length }), {
+        status: 200,
+        headers,
+      });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: "שגיאה בשמירה ל-Blobs: " + String(err) }), {
+        status: 500,
+        headers,
+      });
+    }
   }
 
   return new Response(JSON.stringify({ error: "שיטה לא נתמכת" }), {
