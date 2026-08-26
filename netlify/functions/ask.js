@@ -1,7 +1,3 @@
-// netlify/functions/ask.js
-// POST { question: "..." } -> שולף את הכללים מ-Netlify Blobs, בונה system prompt,
-// פונה ל-Grok (x.ai) עם המפתח שנשמר בהגדרות הסביבה של Netlify, ומחזיר תשובה.
-
 import { getStore } from "@netlify/blobs";
 
 const RULES_KEY = "rules";
@@ -31,6 +27,7 @@ export default async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers });
   }
+
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "שיטה לא נתמכת" }), {
       status: 405,
@@ -64,8 +61,14 @@ export default async (req) => {
     );
   }
 
-  const store = getStore("mesamnim");
-  const rules = (await store.get(RULES_KEY, { type: "json" })) || [];
+  let rules = [];
+  try {
+    const store = getStore("mesamnim");
+    rules = (await store.get(RULES_KEY, { type: "json" })) || [];
+  } catch (e) {
+    console.error("Blobs read error:", e);
+  }
+
   const knowledgeBaseText = rulesToKnowledgeText(rules);
 
   if (!knowledgeBaseText) {
@@ -99,7 +102,7 @@ ${knowledgeBaseText}`;
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "grok-4",
+        model: "grok-beta",
         max_tokens: 1000,
         messages: [
           { role: "system", content: systemPrompt },
