@@ -102,7 +102,7 @@ ${knowledgeBaseText}`;
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "grok-beta",
+        model: "grok-4",
         max_tokens: 1000,
         messages: [
           { role: "system", content: systemPrompt },
