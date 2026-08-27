@@ -37,7 +37,7 @@ export default async (req, context) => {
       return `${i + 1}. קטגוריה: ${cat} | כלל: ${rule} | פירוט: ${desc} | דוגמה: ${ex} | הערות: ${notes}`;
     }).join("\n");
 
-    const apiKey = process.env.GROK_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "מפתח API אינו מוגדר בשרת" }), {
         status: 500,
@@ -45,22 +45,20 @@ export default async (req, context) => {
       });
     }
 
-    const aiResponse = await fetch("https://api.x.ai/v1/chat/completions", {
+    const model = "gemini-2.5-flash";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const aiResponse = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "grok-4",
-        messages: [
-          {
-            role: "system",
-            content: `אתה עוזר לבודקי קריאה. להלן טבלת הכללים:\n${formattedRules}`
-          },
+        systemInstruction: {
+          parts: [{ text: `אתה עוזר לבודקי קריאה. להלן טבלת הכללים:\n${formattedRules}` }]
+        },
+        contents: [
           {
             role: "user",
-            content: question
+            parts: [{ text: question }]
           }
         ]
       })
@@ -75,7 +73,7 @@ export default async (req, context) => {
     }
 
     const aiData = await aiResponse.json();
-    const answer = aiData.choices?.[0]?.message?.content || "לא התקבלה תשובה מה-AI";
+    const answer = aiData.candidates?.[0]?.content?.parts?.[0]?.text || "לא התקבלה תשובה מה-AI";
 
     return new Response(JSON.stringify({ answer }), {
       status: 200,
