@@ -1,77 +1,50 @@
 import { getStore } from "@netlify/blobs";
 
-const KEY = "rules";
-
-export default async (req) => {
-  const store = getStore("mesamnim");
-
-  const headers = {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, x-admin-password",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  };
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers });
-  }
-
+export default async (req, context) => {
+  const store = getStore("app-data");
+  
+  // טעינת נתונים
   if (req.method === "GET") {
     try {
-      const data = await store.get(KEY, { type: "json" });
-      return new Response(JSON.stringify(data || []), { status: 200, headers });
-    } catch (err) {
-      return new Response(JSON.stringify([]), { status: 200, headers });
-    }
-  }
-
-  if (req.method === "POST") {
-    const providedPassword = req.headers.get("x-admin-password") || "";
-    const realPassword = process.env.ADMIN_PASSWORD || "";
-    
-    // בודק סיסמה רק אם הוגדרה סיסמה בהגדרות השרת
-    if (realPassword && providedPassword !== realPassword) {
-      return new Response(JSON.stringify({ error: "סיסמה שגויה" }), {
-        status: 401,
-        headers,
-      });
-    }
-
-    let body;
-    try {
-      body = await req.json();
-    } catch {
-      return new Response(JSON.stringify({ error: "גוף הבקשה אינו JSON תקין" }), {
-        status: 400,
-        headers,
-      });
-    }
-
-    if (!Array.isArray(body)) {
-      return new Response(JSON.stringify({ error: "יש לשלוח מערך של כללים" }), {
-        status: 400,
-        headers,
-      });
-    }
-
-    try {
-      await store.setJSON(KEY, body);
-      return new Response(JSON.stringify({ ok: true, count: body.length }), {
+      const data = await store.get("rules", { type: "json" });
+      return new Response(JSON.stringify(data || []), {
         status: 200,
-        headers,
+        headers: { "Content-Type": "application/json" }
       });
     } catch (err) {
-      return new Response(JSON.stringify({ error: "שגיאה בשמירה ל-Blobs: " + String(err) }), {
+      return new Response(JSON.stringify([]), { status: 200 });
+    }
+  }
+
+  // שמירת נתונים
+  if (req.method === "POST") {
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const requestPassword = req.headers.get("x-admin-password");
+
+    if (adminPassword && requestPassword !== adminPassword) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    try {
+      const rulesData = await req.json();
+      
+      // שמירה מהירה של כל המערך בפעולה אחת
+      await store.setJSON("rules", rulesData);
+
+      return new Response(JSON.stringify({ success: true, count: rulesData.length }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: err.message }), {
         status: 500,
-        headers,
+        headers: { "Content-Type": "application/json" }
       });
     }
   }
 
-  return new Response(JSON.stringify({ error: "שיטה לא נתמכת" }), {
-    status: 405,
-    headers,
-  });
+  return new Response("Method Not Allowed", { status: 405 });
 };
-
-export const config = { path: "/.netlify/functions/rules" };
