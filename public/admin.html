@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ניהול כללי סימון - מה מסמנים?</title>
-    <!-- ספרייה לקריאת קובצי אקסל -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root {
@@ -119,7 +118,6 @@
         .status-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .status-error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
 
-        /* מסך כניסה */
         #loginScreen {
             max-width: 360px;
             margin: 80px auto;
@@ -217,7 +215,6 @@
         if (e.key === 'Enter') login();
     });
 
-    // אם כבר יש סיסמה שמורה בזיכרון הדפדפן (מהפעם הקודמת בסשן זה) - נכנסים ישר
     if (getPassword()) {
         showApp();
     }
@@ -297,9 +294,25 @@
                 const rawRules = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
                 if (rawRules.length > 0) {
-                    rulesData = rawRules;
+                    // נרמול השדות מהאקסל לשמות השדות התקניים שנדרשים בשרת
+                    rulesData = rawRules.map(row => {
+                        const cleanRow = {};
+                        for (let key in row) {
+                            const cleanKey = key.trim();
+                            cleanRow[cleanKey] = String(row[key] || '').trim();
+                        }
+                        return {
+                            'קטגוריה': cleanRow['קטגוריה'] || cleanRow['Category'] || '',
+                            'כלל / כפתור': cleanRow['כלל / כפתור'] || cleanRow['כלל'] || cleanRow['Rule'] || '',
+                            'פירוט': cleanRow['פירוט'] || cleanRow['Description'] || '',
+                            'דוגמה': cleanRow['דוגמה'] || cleanRow['Example'] || '',
+                            'הערות': cleanRow['הערות'] || cleanRow['Notes'] || '',
+                            'תאריך עדכון': cleanRow['תאריך עדכון'] || cleanRow['Date'] || ''
+                        };
+                    });
+
                     renderTable();
-                    showStatus(`נטענו ${rawRules.length} שורות מהקובץ! לחץ על "שמירת כל השינויים" כדי לחבר אותן לשרת.`, 'success');
+                    showStatus(`נטענו ${rulesData.length} שורות מהקובץ! לחץ על "שמירת כל השינויים" כדי לשמור בשרת.`, 'success');
                 } else {
                     showStatus('הקובץ שהועלה ריק', 'error');
                 }
@@ -326,7 +339,7 @@
             if (response.ok) {
                 showStatus('כל השינויים שנערכו נשמרו בהצלחה!', 'success');
             } else if (response.status === 401) {
-                showStatus('סיסמה שגויה - נכנסים מחדש', 'error');
+                showStatus('סיסמה שגויה - יש להתחבר מחדש', 'error');
                 logout();
             } else {
                 const data = await response.json().catch(() => ({}));
