@@ -324,36 +324,44 @@
         reader.readAsArrayBuffer(file);
     }
 
-    async function saveAllRules() {
+async function saveAllRules() {
         showStatus('שומר נתונים...', 'success');
-        try {
-            console.log('שולח נתונים לשרת:', rulesData);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
+        try {
             const response = await fetch('/.netlify/functions/rules', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'x-admin-password': getPassword()
                 },
-                body: JSON.stringify(rulesData)
+                body: JSON.stringify(rulesData),
+                signal: controller.signal
             });
 
-            console.log('סטטוס תגובה מהשרת:', response.status);
-
-            const data = await response.json().catch(() => ({}));
-            console.log('תוכן תגובה מהשרת:', data);
+            clearTimeout(timeoutId);
 
             if (response.ok) {
-                showStatus(`נשמרו בהצלחה ${data.count || rulesData.length} כללים!`, 'success');
+                const data = await response.json().catch(() => ({}));
+                showStatus(`כל ${data.count || rulesData.length} השורות נשמרו בהצלחה!`, 'success');
             } else if (response.status === 401) {
                 showStatus('סיסמה שגויה - יש להתחבר מחדש', 'error');
                 logout();
+            } else if (response.status === 504) {
+                showStatus('שגיאת זמן המתנה (504): השמירה לוקחת יותר מדי זמן בשרת', 'error');
             } else {
-                showStatus(data.error || 'שגיאה בעת שמירת הנתונים בשרת', 'error');
+                const errorData = await response.json().catch(() => ({}));
+                showStatus(errorData.error || `שגיאת שרת (סטטוס ${response.status})`, 'error');
             }
         } catch (err) {
-            console.error('שגיאת תקשורת:', err);
-            showStatus('שגיאת תקשורת בעת שמירת הנתונים: ' + err.message, 'error');
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                showStatus('הבקשה הופסקה עקב זמן המתנה ממושך מדי', 'error');
+            } else {
+                showStatus('שגיאת תקשורת: ' + err.message, 'error');
+            }
         }
     }
     
