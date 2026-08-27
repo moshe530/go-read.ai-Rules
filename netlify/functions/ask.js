@@ -1,134 +1,85 @@
 import { getStore } from "@netlify/blobs";
 
-const RULES_KEY = "rules";
-
-function rulesToKnowledgeText(rules) {
-  if (!Array.isArray(rules) || rules.length === 0) return "";
-  return rules
-    .map((row) => {
-      const parts = [];
-      for (const [key, value] of Object.entries(row)) {
-        if (value && String(value).trim()) parts.push(`${key}: ${value}`);
-      }
-      return parts.join(" | ");
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-export default async (req) => {
-  const headers = {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-  };
-
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers });
-  }
-
+export default async (req, context) => {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "שיטה לא נתמכת" }), {
-      status: 405,
-      headers,
-    });
+    return new Response("Method Not Allowed", { status: 405 });
   }
-
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "גוף הבקשה אינו JSON תקין" }), {
-      status: 400,
-      headers,
-    });
-  }
-
-  const question = (body.question || "").trim();
-  if (!question) {
-    return new Response(JSON.stringify({ error: "נא לשלוח שאלה" }), {
-      status: 400,
-      headers,
-    });
-  }
-
-  const apiKey = process.env.GROK_API_KEY;
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: "לא הוגדר מפתח Grok בהגדרות השרת (GROK_API_KEY)" }),
-      { status: 500, headers }
-    );
-  }
-
-  let rules = [];
-  try {
-    const store = getStore("mesamnim");
-    rules = (await store.get(RULES_KEY, { type: "json" })) || [];
-  } catch (e) {
-    console.error("Blobs read error:", e);
-  }
-
-  const knowledgeBaseText = rulesToKnowledgeText(rules);
-
-  if (!knowledgeBaseText) {
-    return new Response(
-      JSON.stringify({ error: "טבלת הכללים ריקה - יש להזין כללים דרך עמוד הניהול" }),
-      { status: 400, headers }
-    );
-  }
-
-  const systemPrompt = `את/ה עוזר/ת מקצועי/ת לבודקות במבדקי קריאה בעברית. יש לך גישה לבסיס ידע מלא ומעודכן המכיל את כל כללי הסימון של שגיאות קריאה, כולל הערות, עדכונים, ודוגמאות.
-
-התפקיד שלך: לענות על שאלות של בודקות בנוגע למה יש לסמן במצבים ספציפיים במהלך מבדק קריאה.
-
-הנחיות למענה:
-1. ענה בעברית, בקצרה ובבהירות - קודם כל תן את התשובה המעשית (מה לסמן), ואז במידת הצורך הסבר קצר.
-2. אם רלוונטי, ציין את תאריך העדכון של הכלל כדי שהבודקת תדע שזה כלל עדכני.
-3. אם יש כלל שהתעדכן ומבטל כלל קודם - ציין זאת.
-4. אם השאלה נוגעת למצב עם כמה תנאים אפשריים - פרט את התנאי המדויק.
-5. אם אין תשובה ברורה בבסיס הידע, או שיש סתירה בין כללים - אמור זאת בבירור והפנה לכלל הכי קרוב שכן קיים.
-6. אל תמציא כללים שלא מופיעים בבסיס הידע.
-7. תשובה תמציתית - לא יותר מ-4-5 משפטים, אלא אם השאלה דורשת פירוט רב יותר.
-
-בסיס הידע המלא:
-${knowledgeBaseText}`;
 
   try {
-    const grokResponse = await fetch("https://api.x.ai/v1/chat/completions", {
+    const body = await req.json().catch(() => ({}));
+    const question = body.question || body.prompt;
+
+    if (!question || typeof question !== "string") {
+      return new Response(JSON.stringify({ error: "נא להזין שאלה תקינה" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // שליפת הכללים מה-Blobs
+    const store = getStore("app-data");
+    const rules = (await store.get("rules", { type: "json" })) || [];
+
+    if (!Array.isArray(rules) || rules.length === 0) {
+      return new Response(JSON.stringify({ error: "טבלת הכללים ריקה - יש להזין כללים דרך עמוד הניהול. נסי שוב." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // המרת הכללים לפורמט טקסט נקי עבור ה-AI
+    const formattedRules = rules.map((r, i) => {
+      const cat = r['קטגוריה'] || r.category || '';
+      const rule = r['כלל / כפתור'] || r.rule || '';
+      const desc = r['פירוט'] || r.description || '';
+      const ex = r['דוגמה'] || r.example || '';
+      const notes = r['הערות'] || r.notes || '';
+      return `${i + 1}. קטגוריה: ${cat} | כלל: ${rule} | פירוט: ${desc} | דוגמה: ${ex} | הערות: ${notes}`;
+    }).join("\n");
+
+    // כאן מתבצעת הפנייה ל-OpenAI / Gemini בהתאם למפתח שמוגדר אצלך
+    const apiKey = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "מפתח API אינו מוגדר בשרת" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // דוגמה לשליחה ל-OpenAI (אם אתם משתמשים ב-Gemini/OpenAI):
+    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: "grok-4",
-        max_tokens: 1000,
+        model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: question },
-        ],
-      }),
+          {
+            role: "system",
+            content: `אתה עוזר לבודקי קריאה. להלן טבלת הכללים:\n${formattedRules}`
+          },
+          {
+            role: "user",
+            content: question
+          }
+        ]
+      })
     });
 
-    if (!grokResponse.ok) {
-      const errText = await grokResponse.text().catch(() => "");
-      return new Response(
-        JSON.stringify({ error: `שגיאת שרת Grok: ${grokResponse.status} ${errText}` }),
-        { status: 502, headers }
-      );
-    }
+    const aiData = await aiResponse.json();
+    const answer = aiData.choices?.[0]?.message?.content || "לא התקבלה תשובה מה-AI";
 
-    const data = await grokResponse.json();
-    const answer = data.choices?.[0]?.message?.content || "לא התקבלה תשובה";
+    return new Response(JSON.stringify({ answer }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
 
-    return new Response(JSON.stringify({ answer }), { status: 200, headers });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
+    return new Response(JSON.stringify({ error: "שגיאת שרת: " + err.message }), {
       status: 500,
-      headers,
+      headers: { "Content-Type": "application/json" }
     });
   }
 };
-
-export const config = { path: "/.netlify/functions/ask" };
