@@ -327,6 +327,8 @@
     async function saveAllRules() {
         showStatus('שומר נתונים...', 'success');
         try {
+            console.log('שולח נתונים לשרת:', rulesData);
+
             const response = await fetch('/.netlify/functions/rules', {
                 method: 'POST',
                 headers: {
@@ -336,21 +338,25 @@
                 body: JSON.stringify(rulesData)
             });
 
+            console.log('סטטוס תגובה מהשרת:', response.status);
+
+            const data = await response.json().catch(() => ({}));
+            console.log('תוכן תגובה מהשרת:', data);
+
             if (response.ok) {
-                showStatus('כל השינויים שנערכו נשמרו בהצלחה!', 'success');
+                showStatus(`נשמרו בהצלחה ${data.count || rulesData.length} כללים!`, 'success');
             } else if (response.status === 401) {
                 showStatus('סיסמה שגויה - יש להתחבר מחדש', 'error');
                 logout();
             } else {
-                const data = await response.json().catch(() => ({}));
                 showStatus(data.error || 'שגיאה בעת שמירת הנתונים בשרת', 'error');
             }
         } catch (err) {
-            console.error(err);
-            showStatus('שגיאת תקשורת בעת שמירת הנתונים', 'error');
+            console.error('שגיאת תקשורת:', err);
+            showStatus('שגיאת תקשורת בעת שמירת הנתונים: ' + err.message, 'error');
         }
     }
-
+    
     function showStatus(message, type) {
         const el = document.getElementById('statusMsg');
         el.textContent = message;
