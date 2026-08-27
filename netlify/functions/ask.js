@@ -37,8 +37,7 @@ export default async (req, context) => {
       return `${i + 1}. קטגוריה: ${cat} | כלל: ${rule} | פירוט: ${desc} | דוגמה: ${ex} | הערות: ${notes}`;
     }).join("\n");
 
-    // כאן מתבצעת הפנייה ל-OpenAI / Gemini בהתאם למפתח שמוגדר אצלך
-    const apiKey = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
+    const apiKey = process.env.GROK_API_KEY;
     if (!apiKey) {
       return new Response(JSON.stringify({ error: "מפתח API אינו מוגדר בשרת" }), {
         status: 500,
@@ -46,15 +45,14 @@ export default async (req, context) => {
       });
     }
 
-    // דוגמה לשליחה ל-OpenAI (אם אתם משתמשים ב-Gemini/OpenAI):
-    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const aiResponse = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+        "Authorization": `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "grok-4",
         messages: [
           {
             role: "system",
@@ -67,6 +65,14 @@ export default async (req, context) => {
         ]
       })
     });
+
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text();
+      return new Response(JSON.stringify({ error: "שגיאה מול ה-AI: " + errText }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
     const aiData = await aiResponse.json();
     const answer = aiData.choices?.[0]?.message?.content || "לא התקבלה תשובה מה-AI";
